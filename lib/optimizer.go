@@ -178,7 +178,7 @@ func consolidateARNs(arns []string) ([]string, error) {
 }
 
 func consolidateARNsByAction(arns []string) ([]string, error) {
-	actionMap := make(map[string]bool)
+	actionMap := make(map[string][]string)
 
 	for _, arn := range arns {
 			if arn == "" {
@@ -188,21 +188,19 @@ func consolidateARNsByAction(arns []string) ([]string, error) {
 			// Extract action prefix
 			action := strings.SplitN(arn, ":", 2)[0]
 
-			// Add the action prefix to the map
-			actionMap[action] = true
+			// Add the ARN to the respective action prefix map
+			actionMap[action] = append(actionMap[action], arn)
 	}
 
 	var consolidatedARNs []string
-	for action := range actionMap {
-			// Generate a glob pattern for the action prefix
-			globPattern := action + ":*"
-
-			// Append the glob pattern to the consolidated ARNs
-			consolidatedARNs = append(consolidatedARNs, globPattern)
+	for _, arns := range actionMap {
+			// Append the ARNs grouped by action prefix to the consolidated ARNs
+			consolidatedARNs = append(consolidatedARNs, arns...)
 	}
 
 	return consolidatedARNs, nil
 }
+
 
 type UsageHistoryRecord struct {
 	UserIdenityArn string `csv:"useridentity"`
