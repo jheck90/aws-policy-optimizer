@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/justmiles/aws-policy-optimizer/cmd"
+	"github.com/jheck90/aws-policy-optimizer/cmd"
 )
 
 // version of aws-policy-optimizer. Overwritten during build
