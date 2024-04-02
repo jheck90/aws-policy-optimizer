@@ -27,95 +27,96 @@ type GenerateOptimizedPolicyOptions struct {
 	Consolidate				 bool
 }
 
-	func GenerateOptimizedPolicy(options GenerateOptimizedPolicyOptions) (string, error) {
-		start := time.Now().AddDate(0, 0, options.AnalysisPeriod*-1)
-	
-		sql := fmt.Sprintf(`
-		SELECT DISTINCT
-			useridentity.arn as useridentity,
-			CONCAT(SPLIT_PART(eventsource, '.', 1),':',eventname) as permission,
-			resource.arn as resource
-		FROM "%s"."%s"
-		CROSS JOIN UNNEST(resources) AS t(resource)
-		WHERE day > '%s'
-		AND regexp_like(useridentity.arn, '%s')
-		AND account_id = '%s'
-		AND region = '%s'
-		AND NULLIF(errorcode, '') IS NULL
-		`, options.Database, options.Table, start.Format("2006/01/02"), options.UserIdentityARN, options.AccountID, options.Region)
-	
-		var usageHistory []UsageHistoryRecord
-		err := QueryAthena(sql, options.Database, options.QueryResultsBucket, options.QueryResultsPrefix, options.AthenaWorkgroup, &usageHistory)
-		if err != nil {
-			return "", err
-		}
-	
-		// Generate the permissions map map[identity]map[permission]resource
-		var permissionMap = make(map[string]map[string][]string)
-		for _, record := range usageHistory {
-			if _, ok := permissionMap[record.UserIdenityArn]; ok {
+func GenerateOptimizedPolicy(options GenerateOptimizedPolicyOptions) (string, error) {
+	start := time.Now().AddDate(0, 0, options.AnalysisPeriod*-1)
+
+	sql := fmt.Sprintf(`
+	SELECT DISTINCT
+		useridentity.arn as useridentity,
+		CONCAT(SPLIT_PART(eventsource, '.', 1),':',eventname) as permission,
+		resource.arn as resource
+	FROM "%s"."%s"
+	CROSS JOIN UNNEST(resources) AS t(resource)
+	WHERE day > '%s'
+	AND regexp_like(useridentity.arn, '%s')
+	AND account_id = '%s'
+	AND region = '%s'
+	AND NULLIF(errorcode, '') IS NULL
+	`, options.Database, options.Table, start.Format("2006/01/02"), options.UserIdentityARN, options.AccountID, options.Region)
+
+	var usageHistory []UsageHistoryRecord
+	err := QueryAthena(sql, options.Database, options.QueryResultsBucket, options.QueryResultsPrefix, options.AthenaWorkgroup, &usageHistory)
+	if err != nil {
+		return "", err
+	}
+
+	// Generate the permissions map map[identity]map[permission]resource
+	var permissionMap = make(map[string]map[string][]string)
+	for _, record := range usageHistory {
+		if _, ok := permissionMap[record.UserIdenityArn]; ok {
+			permissionMap[record.UserIdenityArn][record.Permission] = append(permissionMap[record.UserIdenityArn][record.Permission], record.ResourceArn)
+
+			if _, ok := permissionMap[record.UserIdenityArn][record.Permission]; ok {
 				permissionMap[record.UserIdenityArn][record.Permission] = append(permissionMap[record.UserIdenityArn][record.Permission], record.ResourceArn)
-	
-				if _, ok := permissionMap[record.UserIdenityArn][record.Permission]; ok {
-					permissionMap[record.UserIdenityArn][record.Permission] = append(permissionMap[record.UserIdenityArn][record.Permission], record.ResourceArn)
-				} else {
-					permissionMap[record.UserIdenityArn][record.Permission] = []string{record.ResourceArn}
-				}
-	
 			} else {
-				permissionMap[record.UserIdenityArn] = make(map[string][]string)
 				permissionMap[record.UserIdenityArn][record.Permission] = []string{record.ResourceArn}
 			}
+
+		} else {
+			permissionMap[record.UserIdenityArn] = make(map[string][]string)
+			permissionMap[record.UserIdenityArn][record.Permission] = []string{record.ResourceArn}
 		}
-	
-		// Deduplicate the permissions -> Resource map
-		// Build the final IAM Policy
-		var statements = []policy.Statement{}
-		for identity, permissionSet := range permissionMap {
-			for action, resources := range permissionSet {
-				consolidatedResources, err := consolidateARNs(resources)
+	}
+
+	// Deduplicate the permissions -> Resource map
+	// Build the final IAM Policy
+	var statements = []policy.Statement{}
+	for identity, permissionSet := range permissionMap {
+		for action, resources := range permissionSet {
+			consolidatedResources, err := consolidateARNs(resources)
+			if err != nil {
+				return "", err
+			}
+			actions := []string{action}
+
+			// Deduplicate policies
+			for dupeAction, dupeResources := range permissionSet {
+				dupeConsolidatedResources, err := consolidateARNs(dupeResources)
 				if err != nil {
 					return "", err
 				}
-				actions := []string{action}
-	
-				// Deduplicate policies
-				for dupeAction, dupeResources := range permissionSet {
-					dupeConsolidatedResources, err := consolidateARNs(dupeResources)
-					if err != nil {
-						return "", err
-					}
-					if dupeAction == action {
-						continue
-					}
-					if reflect.DeepEqual(consolidatedResources, dupeConsolidatedResources) {
-						actions = append(actions, dupeAction)
-						delete(permissionMap[identity], dupeAction)
-					}
+				if dupeAction == action {
+					continue
 				}
-	
-				statements = append(statements, policy.Statement{
-					Effect:   policy.EffectAllow,
-					Action:   policy.NewStringOrSlice(false, actions...),
-					Resource: policy.NewStringOrSlice(false, consolidatedResources...),
-				})
+				if reflect.DeepEqual(consolidatedResources, dupeConsolidatedResources) {
+					actions = append(actions, dupeAction)
+					delete(permissionMap[identity], dupeAction)
+				}
 			}
-		}
-	
-		p := policy.Policy{
-			Version:    policy.VersionLatest,
-			Id:         "GenIAMPolicy",
-			Statements: policy.NewStatementOrSlice(statements...),
-		}
-	
-		out, _ := json.MarshalIndent(p, "", "\t")
-	
-		if options.OutputFormat == "hcl" {
-			return converter.Convert("GenIAMPolicy", out)
-		} else {
-			return string(out), nil
+
+			statements = append(statements, policy.Statement{
+				Effect:   policy.EffectAllow,
+				Action:   policy.NewStringOrSlice(false, actions...),
+				Resource: policy.NewStringOrSlice(false, consolidatedResources...),
+			})
 		}
 	}
+
+	p := policy.Policy{
+		Version:    policy.VersionLatest,
+		Id:         "GenIAMPolicy",
+		Statements: policy.NewStatementOrSlice(statements...),
+	}
+
+	out, _ := json.MarshalIndent(p, "", "\t")
+
+	if options.OutputFormat == "hcl" {
+		return converter.Convert("GenIAMPolicy", out)
+	} else {
+		return string(out), nil
+	}
+}
+
 	
 
 func generateGlobPattern(ss []string) string {
