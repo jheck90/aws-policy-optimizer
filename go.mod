@@ -1,4 +1,4 @@
-module github.com/justmiles/aws-policy-optimizer
+module github.com/jheck90/aws-policy-optimizer
 
 go 1.22rc2
 

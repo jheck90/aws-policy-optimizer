@@ -7,7 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	optimizer "github.com/justmiles/aws-policy-optimizer/lib"
+	optimizer "github.com/jheck90/aws-policy-optimizer/lib"
 )
 
 var (
