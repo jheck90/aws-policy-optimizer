@@ -24,10 +24,11 @@ type GenerateOptimizedPolicyOptions struct {
 	Region             string
 	OutputFormat       string
 	AnalysisPeriod     int
-	Consolidate				 bool
+	Shrink						 bool
 }
 
 func GenerateOptimizedPolicy(options GenerateOptimizedPolicyOptions) (string, error) {
+
 	start := time.Now().AddDate(0, 0, options.AnalysisPeriod*-1)
 
 	sql := fmt.Sprintf(`
@@ -50,7 +51,7 @@ func GenerateOptimizedPolicy(options GenerateOptimizedPolicyOptions) (string, er
 		return "", err
 	}
 
-	// Generate the permissions map map[identity]map[permission]resource
+	// generate the permissions map map[identity]map[permission]resource
 	var permissionMap = make(map[string]map[string][]string)
 	for _, record := range usageHistory {
 		if _, ok := permissionMap[record.UserIdenityArn]; ok {
@@ -73,13 +74,23 @@ func GenerateOptimizedPolicy(options GenerateOptimizedPolicyOptions) (string, er
 	var statements = []policy.Statement{}
 	for identity, permissionSet := range permissionMap {
 		for action, resources := range permissionSet {
-			consolidatedResources, err := consolidateARNs(resources)
+			var consolidatedResources []string
+			var err error
+
+			if options.Shrink {
+					// Consolidate ARNs by action prefixes only if shrink is true
+					consolidatedResources, err = consolidateARNsByAction(resources)
+			} else {
+					// Otherwise, use the regular consolidation by ARNs
+					consolidatedResources, err = consolidateARNs(resources)
+			}
+
 			if err != nil {
-				return "", err
+					return "", err
 			}
 			actions := []string{action}
 
-			// Deduplicate policies
+			// deduplicate policies
 			for dupeAction, dupeResources := range permissionSet {
 				dupeConsolidatedResources, err := consolidateARNs(dupeResources)
 				if err != nil {
@@ -95,16 +106,18 @@ func GenerateOptimizedPolicy(options GenerateOptimizedPolicyOptions) (string, er
 			}
 
 			statements = append(statements, policy.Statement{
-				Effect:   policy.EffectAllow,
+				Effect: policy.EffectAllow,
+				// Principal: policy.NewServicePrincipal("cloudtrail.amazonaws.com"), // TODO: consider getting the principal
 				Action:   policy.NewStringOrSlice(false, actions...),
 				Resource: policy.NewStringOrSlice(false, consolidatedResources...),
-			})
+			},
+			)
 		}
 	}
 
 	p := policy.Policy{
 		Version:    policy.VersionLatest,
-		Id:         "GenIAMPolicy",
+		Id:         "GenIAMPolicy", // TODO: better ID
 		Statements: policy.NewStatementOrSlice(statements...),
 	}
 
@@ -112,12 +125,11 @@ func GenerateOptimizedPolicy(options GenerateOptimizedPolicyOptions) (string, er
 
 	if options.OutputFormat == "hcl" {
 		return converter.Convert("GenIAMPolicy", out)
+
 	} else {
 		return string(out), nil
 	}
 }
-
-	
 
 func generateGlobPattern(ss []string) string {
 	if len(ss) == 0 {
@@ -163,6 +175,33 @@ func consolidateARNs(arns []string) ([]string, error) {
 	}
 
 	return ss, nil
+}
+
+func consolidateARNsByAction(arns []string) ([]string, error) {
+	actionMap := make(map[string]bool)
+
+	for _, arn := range arns {
+			if arn == "" {
+					continue
+			}
+
+			// Extract action prefix
+			action := strings.SplitN(arn, ":", 2)[0]
+
+			// Add the action prefix to the map
+			actionMap[action] = true
+	}
+
+	var consolidatedARNs []string
+	for action := range actionMap {
+			// Generate a glob pattern for the action prefix
+			globPattern := action + ":*"
+
+			// Append the glob pattern to the consolidated ARNs
+			consolidatedARNs = append(consolidatedARNs, globPattern)
+	}
+
+	return consolidatedARNs, nil
 }
 
 type UsageHistoryRecord struct {

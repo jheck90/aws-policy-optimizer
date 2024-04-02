@@ -26,7 +26,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&options.QueryResultsPrefix, "query-results-prefix", "", "(optional) S3 bucket for Athena query prefix")
 	rootCmd.PersistentFlags().StringVar(&options.OutputFormat, "output-format", "json", "json or hcl")
 	rootCmd.PersistentFlags().IntVar(&options.AnalysisPeriod, "analysis-period", 90, "how far back into the access records to look")
-	rootCmd.PersistentFlags().BoolVar(&options.Consolidate, "consolidate", false, "attempts to further consolidate new policy, based on actions")
+	rootCmd.PersistentFlags().BoolVar(&options.Shrink, "shrink", false, "attempts to further consolidate new policy, based on actions")
 
 	rootCmd.MarkPersistentFlagRequired("user-identity-arn")
 	rootCmd.MarkPersistentFlagRequired("account-id")
