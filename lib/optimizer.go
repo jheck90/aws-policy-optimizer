@@ -178,28 +178,47 @@ func consolidateARNs(arns []string) ([]string, error) {
 }
 
 func consolidateARNsByAction(arns []string) ([]string, error) {
-	actionMap := make(map[string][]string)
+	actionMap := make(map[string]map[string]bool)
 
+	// Group ARNs by action prefix and unique resource
 	for _, arn := range arns {
 			if arn == "" {
 					continue
 			}
 
-			// Extract action prefix
-			action := strings.SplitN(arn, ":", 2)[0]
+			// Extract action prefix and resource
+			parts := strings.SplitN(arn, ":", 3)
+			action := parts[0]
+			resource := ""
+			if len(parts) == 3 {
+					resource = parts[2]
+			}
 
-			// Add the ARN to the respective action prefix map
-			actionMap[action] = append(actionMap[action], arn)
+			// Initialize action map if not exists
+			if _, ok := actionMap[action]; !ok {
+					actionMap[action] = make(map[string]bool)
+			}
+
+			// Add resource to the action map
+			actionMap[action][resource] = true
 	}
 
 	var consolidatedARNs []string
-	for _, arns := range actionMap {
-			// Append the ARNs grouped by action prefix to the consolidated ARNs
-			consolidatedARNs = append(consolidatedARNs, arns...)
+	for action, resources := range actionMap {
+			// Append action prefix to consolidated ARNs
+			consolidatedARNs = append(consolidatedARNs, action)
+
+			// Append unique resources under this action prefix
+			for resource := range resources {
+					if resource != "" {
+							consolidatedARNs = append(consolidatedARNs, fmt.Sprintf("%s:%s", action, resource))
+					}
+			}
 	}
 
 	return consolidatedARNs, nil
 }
+
 
 
 type UsageHistoryRecord struct {
