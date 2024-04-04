@@ -371,45 +371,39 @@ func getPolicyJSON(policyARN, versionID string) ([]byte, error) {
 	return []byte(decodedPolicyDocument), nil
 }
 
-// getActions extracts actions from the policy JSON document
 func getActions(policy map[string]interface{}) (map[string][]string, error) {
 	actions := make(map[string][]string)
 
-	// Log the policy structure to understand its format
-	log.Printf("Policy: %+v\n", policy)
-
-	// Extract actions from the policy
-	statements, ok := policy["Statement"].([]interface{})
+	statements, ok := policy["Statements"].([]interface{})
 	if !ok {
-			return nil, fmt.Errorf("invalid or missing 'Statement' field in policy")
+		return nil, fmt.Errorf("invalid or missing 'Statements' field in policy")
 	}
-	log.Printf("Statements: %+v\n", statements)
 
-	for _, statement := range statements {
-			// Convert the statement to a map
-			stmt, ok := statement.(map[string]interface{})
-			if !ok {
-					return nil, fmt.Errorf("invalid statement format")
-			}
+	fmt.Println("Number of statements found:", len(statements))
 
-			// Extract the action from the statement
-			action, ok := stmt["Action"].(string) // Assuming Action is a string
-			if !ok {
-					return nil, fmt.Errorf("invalid or missing 'Action' field in statement")
-			}
+	for i, stmt := range statements {
+		fmt.Printf("Processing statement #%d\n", i+1)
 
-			// Extract the resources from the statement
-			resources, ok := stmt["Resource"].([]string) // Assuming Resource is a string array
-			if !ok {
-					return nil, fmt.Errorf("invalid or missing 'Resource' field in statement")
-			}
+		statement, ok := stmt.(map[string]interface{})
+		if !ok {
+			return nil, fmt.Errorf("invalid statement format in policy")
+		}
 
-			// Add the action and resources to the map
-			actions[action] = resources
+		action, ok := statement["Action"].(string)
+		if !ok {
+			return nil, fmt.Errorf("invalid or missing 'Action' field in statement")
+		}
+
+		fmt.Printf("Action found in statement #%d: %s\n", i+1, action)
+
+		actions[action] = append(actions[action], "")
 	}
+
+	fmt.Println("Actions extracted successfully:", actions)
 
 	return actions, nil
 }
+
 
 
 func generateGlobPattern(ss []string) string {
