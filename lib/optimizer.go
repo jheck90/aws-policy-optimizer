@@ -191,53 +191,45 @@ func consolidateARNs(arns []string) ([]string, error) {
 }
 
 
-// ComparePolicies compares the actions and resources within IAM policies and writes the differences to the specified file if diffFile is provided
 func ComparePolicies(existingPolicyJSON, newPolicyJSON []byte, diffFile string) error {
 	var existingPolicy, newPolicy map[string]interface{}
 	if err := json.Unmarshal(existingPolicyJSON, &existingPolicy); err != nil {
-			return fmt.Errorf("error unmarshaling existing policy JSON: %w", err)
+		return fmt.Errorf("error unmarshaling existing policy JSON: %w", err)
 	}
 	if err := json.Unmarshal(newPolicyJSON, &newPolicy); err != nil {
-			return fmt.Errorf("error unmarshaling new policy JSON: %w", err)
+		return fmt.Errorf("error unmarshaling new policy JSON: %w", err)
 	}
 
 	// Create a slice to hold the comparison results
 	var comparisons []string
 
-	// Extract statements from existing and new policies
-	existingStatements := getStatements(existingPolicy)
-	newStatements := getStatements(newPolicy)
+	// Extract actions and resources from existing and new policies
+	existingActions := getActions(existingPolicy)
+	newActions := getActions(newPolicy)
 
-	// Compare statements present in existing policy but not in new policy
-	for action, existingResources := range existingStatements {
-			newResources, ok := newStatements[action]
-			if !ok {
-					comparisons = append(comparisons, fmt.Sprintf("%-30s | %v | %s\n", action, existingResources, "MISSING IN NEW POLICY"))
-					continue
-			}
-			if !reflect.DeepEqual(existingResources, newResources) {
-					comparisons = append(comparisons, fmt.Sprintf("%-30s | %v | %v\n", action, existingResources, newResources))
-			}
-	}
-
-	// Compare statements present in new policy but not in existing policy
-	for action, newResources := range newStatements {
-			_, ok := existingStatements[action]
-			if !ok {
-					comparisons = append(comparisons, fmt.Sprintf("%-30s | %s | %v\n", action, "MISSING IN EXISTING POLICY", newResources))
-			}
+	// Compare actions present in existing policy but not in new policy
+	for action, existingResources := range existingActions {
+		newResources, ok := newActions[action]
+		if !ok {
+			comparisons = append(comparisons, fmt.Sprintf("%-30s | %v | %s\n", action, existingResources, "REMOVED IN NEW POLICY"))
+			continue
+		}
+		if !reflect.DeepEqual(existingResources, newResources) {
+			comparisons = append(comparisons, fmt.Sprintf("%-30s | %v | %v\n", action, existingResources, newResources))
+		}
 	}
 
 	// Write comparison results to the specified file if diffFile is provided
 	if diffFile != "" {
-			err := os.WriteFile(diffFile, []byte(strings.Join(comparisons, "")), 0644)
-			if err != nil {
-					return fmt.Errorf("error writing comparison results to file: %w", err)
-			}
+		err := os.WriteFile(diffFile, []byte(strings.Join(comparisons, "")), 0644)
+		if err != nil {
+			return fmt.Errorf("error writing comparison results to file: %w", err)
+		}
 	}
 
 	return nil
 }
+
 
 
 // getStatements extracts actions and resources from IAM policy statements
@@ -376,30 +368,24 @@ func getPolicyJSON(policyARN, versionID string) ([]byte, error) {
 	return []byte(decodedPolicyDocument), nil
 }
 
-
-func extractActions(policyMap map[string]interface{}) []string {
-	var actions []string
-
-	// Check if the "Statement" key exists in the policy map
-	if statements, ok := policyMap["Statement"].([]interface{}); ok {
-		// Iterate over each statement
+func getActions(policy map[string]interface{}) map[string][]interface{} {
+	actions := make(map[string][]interface{})
+	if statements, ok := policy["Statement"].([]interface{}); ok {
 		for _, statement := range statements {
-			if stmtMap, ok := statement.(map[string]interface{}); ok {
-				// Check if the "Action" key exists in the statement map
-				if actionList, ok := stmtMap["Action"].([]interface{}); ok {
-					// Iterate over each action in the statement
-					for _, action := range actionList {
-						if actionStr, ok := action.(string); ok {
-							actions = append(actions, actionStr)
-						}
+			if stmt, ok := statement.(map[string]interface{}); ok {
+				if action, ok := stmt["Action"].([]interface{}); ok {
+					resources := stmt["Resource"].([]interface{})
+					for _, act := range action {
+						actionStr := act.(string)
+						actions[actionStr] = resources
 					}
 				}
 			}
 		}
 	}
-
 	return actions
 }
+
 
 func generateGlobPattern(ss []string) string {
 	if len(ss) == 0 {
