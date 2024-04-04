@@ -38,9 +38,9 @@ type GenerateOptimizedPolicyOptions struct {
 }
 
 // DiffResult represents the result of a policy diff
-type DiffResult struct {
-	DiffExists bool
-}
+// type DiffResult struct {
+// 	DiffExists bool
+// }
 
 // GenerateOptimizedPolicy generates an optimized IAM policy based on the provided options
 func GenerateOptimizedPolicy(options GenerateOptimizedPolicyOptions) (string, error) {
@@ -143,23 +143,14 @@ func GenerateOptimizedPolicy(options GenerateOptimizedPolicyOptions) (string, er
 		return "Found exact match", nil
 	}
 
-    // Diff policies if enabled
-    if options.Diff {
-			// Diff the policies
-			diffContent, err := DiffPolicies(currentPolicyJSON, newPolicyJSON)
-			if err != nil {
-					return "", err
-			}
-
-			// If diff flag is provided, write the diff to the specified file
-			if options.DiffFile != "" {
-					err := writeDiffToFile(options.DiffFile, diffContent)
-					if err != nil {
-							return "", err
-					}
-			}
+// Diff policies if enabled
+if options.Diff {
+	// Call DiffPolicies to generate the diff and write it to the file
+	err := DiffPolicies(currentPolicyJSON, newPolicyJSON, options.DiffFile)
+	if err != nil {
+			return "", err
 	}
-
+}
 
 	out, _ := json.MarshalIndent(p, "", "\t")
 
@@ -198,17 +189,27 @@ func consolidateARNs(arns []string) ([]string, error) {
 
 	return ss, nil
 }
-func DiffPolicies(currentPolicyJSON, newPolicyJSON []byte) (string, error) {
+func DiffPolicies(currentPolicyJSON, newPolicyJSON []byte, diffFile string) error {
 	// Create the diff patch
 	patch, err := jsonpatch.CreateMergePatch(currentPolicyJSON, newPolicyJSON)
 	if err != nil {
-			return "", err
+			return err
 	}
 
-	// Convert the diff patch to a string
-	diffContent := string(patch)
+	// Open the diff file for writing
+	file, err := os.Create(diffFile)
+	if err != nil {
+			return err
+	}
+	defer file.Close()
 
-	return diffContent, nil
+	// Write the diff patch to the file
+	_, err = file.Write(patch)
+	if err != nil {
+			return err
+	}
+
+	return nil
 }
 
 // CheckForExactMatch checks if the generated policy matches the existing policy exactly
