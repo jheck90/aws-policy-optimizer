@@ -10,7 +10,8 @@ import (
 	"time"
 	"log"
 	"net/url"
-	"io/ioutil"
+	"errors"
+	"os"
 
 	"github.com/gigawattio/awsarn"
 	"github.com/flosell/iam-policy-json-to-terraform/converter"
@@ -229,7 +230,7 @@ func ComparePolicies(existingPolicyJSON, newPolicyJSON []byte, diffFile string) 
 
 	// Write comparison results to the specified file if diffFile is provided
 	if diffFile != "" {
-			err := ioutil.WriteFile(diffFile, []byte(strings.Join(comparisons, "")), 0644)
+			err := os.WriteFile(diffFile, []byte(strings.Join(comparisons, "")), 0644)
 			if err != nil {
 					return fmt.Errorf("error writing comparison results to file: %w", err)
 			}
@@ -372,22 +373,34 @@ func getPolicyJSON(policyARN, versionID string) ([]byte, error) {
 		return nil, err
 	}
 
-	// Unmarshal the JSON document into a structured Go data type
-	var policy struct {
-		Statement []struct {
-			Action []string `json:"Action"`
-		} `json:"Statement"`
-	}
-	if err := json.Unmarshal([]byte(decodedPolicyDocument), &policy); err != nil {
+	// Unmarshal the JSON document into a map[string]interface{}
+	var policyMap map[string]interface{}
+	if err := json.Unmarshal([]byte(decodedPolicyDocument), &policyMap); err != nil {
 		return nil, err
 	}
 
-	// Create a slice to hold individual actions/statements
-	var actions []string
-
 	// Extract individual actions/statements from the policy
-	for _, statement := range policy.Statement {
-		actions = append(actions, statement.Action...)
+	var actions []string
+	statements, ok := policyMap["Statement"].([]interface{})
+	if !ok {
+		return nil, errors.New("Statement field not found or not in expected format")
+	}
+	for _, stmt := range statements {
+		stmtMap, ok := stmt.(map[string]interface{})
+		if !ok {
+			return nil, errors.New("Statement not in expected format")
+		}
+		action, ok := stmtMap["Action"].([]interface{})
+		if !ok {
+			return nil, errors.New("Action field not found or not in expected format")
+		}
+		for _, a := range action {
+			actionStr, ok := a.(string)
+			if !ok {
+				return nil, errors.New("Action not in expected format")
+			}
+			actions = append(actions, actionStr)
+		}
 	}
 
 	// Convert the actions to JSON format
@@ -398,6 +411,7 @@ func getPolicyJSON(policyARN, versionID string) ([]byte, error) {
 
 	return actionsJSON, nil
 }
+
 
 
 func generateGlobPattern(ss []string) string {
