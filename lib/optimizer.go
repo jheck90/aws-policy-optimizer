@@ -348,7 +348,7 @@ func getPolicyDefaultVersionID(policyARN string) (string, error) {
 func getPolicyJSON(policyARN, versionID string) ([]byte, error) {
 	// Create an AWS session
 	sess := session.Must(session.NewSessionWithOptions(session.Options{
-			SharedConfigState: session.SharedConfigEnable,
+		SharedConfigState: session.SharedConfigEnable,
 	}))
 
 	// Create an IAM client
@@ -356,28 +356,30 @@ func getPolicyJSON(policyARN, versionID string) ([]byte, error) {
 
 	// Input parameters for GetPolicyVersion API call
 	input := &iam.GetPolicyVersionInput{
-			PolicyArn: aws.String(policyARN),
-			VersionId: aws.String(versionID),
+		PolicyArn: aws.String(policyARN),
+		VersionId: aws.String(versionID),
 	}
 
 	// Execute the GetPolicyVersion API call
 	resp, err := svc.GetPolicyVersion(input)
 	if err != nil {
-			return nil, err
+		return nil, err
 	}
 
 	// Decode URL-encoded policy document
 	decodedPolicyDocument, err := url.QueryUnescape(aws.StringValue(resp.PolicyVersion.Document))
 	if err != nil {
-			return nil, err
+		return nil, err
 	}
 
 	// Unmarshal the JSON document into a structured Go data type
 	var policy struct {
-			Statement []json.RawMessage `json:"Statement"`
+		Statement []struct {
+			Action []string `json:"Action"`
+		} `json:"Statement"`
 	}
 	if err := json.Unmarshal([]byte(decodedPolicyDocument), &policy); err != nil {
-			return nil, err
+		return nil, err
 	}
 
 	// Create a slice to hold individual actions/statements
@@ -385,23 +387,18 @@ func getPolicyJSON(policyARN, versionID string) ([]byte, error) {
 
 	// Extract individual actions/statements from the policy
 	for _, statement := range policy.Statement {
-			var stmt struct {
-					Action []string `json:"Action"`
-			}
-			if err := json.Unmarshal(statement, &stmt); err != nil {
-					return nil, err
-			}
-			actions = append(actions, stmt.Action...)
+		actions = append(actions, statement.Action...)
 	}
 
 	// Convert the actions to JSON format
 	actionsJSON, err := json.Marshal(actions)
 	if err != nil {
-			return nil, err
+		return nil, err
 	}
 
 	return actionsJSON, nil
 }
+
 
 func generateGlobPattern(ss []string) string {
 	if len(ss) == 0 {
