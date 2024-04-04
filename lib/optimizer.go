@@ -10,7 +10,7 @@ import (
 	"time"
 	"log"
 	"net/url"
-	"errors"
+	// "errors"
 	"os"
 
 	"github.com/gigawattio/awsarn"
@@ -373,52 +373,33 @@ func getPolicyJSON(policyARN, versionID string) ([]byte, error) {
 		return nil, err
 	}
 
-	// Print the decoded policy document for debugging
-	fmt.Println("Decoded Policy Document:", decodedPolicyDocument)
-
-	// Unmarshal the JSON document into a map[string]interface{}
-	var policyMap map[string]interface{}
-	if err := json.Unmarshal([]byte(decodedPolicyDocument), &policyMap); err != nil {
-		return nil, err
-	}
-
-	// Print the policy map for debugging
-	fmt.Println("Policy Map:", policyMap)
-	
-	// Extract individual actions/statements from the policy
-	var actions []string
-	statements, ok := policyMap["Statement"].([]interface{})
-	if !ok {
-		return nil, errors.New("Statement field not found or not in expected format")
-	}
-	for _, stmt := range statements {
-		stmtMap, ok := stmt.(map[string]interface{})
-		if !ok {
-			return nil, errors.New("Statement not in expected format")
-		}
-		action, ok := stmtMap["Action"].([]interface{})
-		if !ok {
-			return nil, errors.New("Action field not found or not in expected format")
-		}
-		for _, a := range action {
-			actionStr, ok := a.(string)
-			if !ok {
-				return nil, errors.New("Action not in expected format")
-			}
-			actions = append(actions, actionStr)
-		}
-	}
-
-	// Convert the actions to JSON format
-	actionsJSON, err := json.Marshal(actions)
-	if err != nil {
-		return nil, err
-	}
-
-	return actionsJSON, nil
+	return []byte(decodedPolicyDocument), nil
 }
 
 
+func extractActions(policyMap map[string]interface{}) []string {
+	var actions []string
+
+	// Check if the "Statement" key exists in the policy map
+	if statements, ok := policyMap["Statement"].([]interface{}); ok {
+		// Iterate over each statement
+		for _, statement := range statements {
+			if stmtMap, ok := statement.(map[string]interface{}); ok {
+				// Check if the "Action" key exists in the statement map
+				if actionList, ok := stmtMap["Action"].([]interface{}); ok {
+					// Iterate over each action in the statement
+					for _, action := range actionList {
+						if actionStr, ok := action.(string); ok {
+							actions = append(actions, actionStr)
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return actions
+}
 
 func generateGlobPattern(ss []string) string {
 	if len(ss) == 0 {
