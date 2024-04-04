@@ -195,6 +195,9 @@ func DiffPolicies(currentPolicyJSON, newPolicyJSON []byte) (DiffResult, error) {
 	log.Println("DiffPolicies: Starting diff operation")
 	defer log.Println("DiffPolicies: Diff operation completed")
 
+	log.Printf("DiffPolicies: Current policy JSON: %s\n", string(currentPolicyJSON))
+	log.Printf("DiffPolicies: New policy JSON: %s\n", string(newPolicyJSON))
+
 	patch, err := jsonpatch.CreateMergePatch(currentPolicyJSON, newPolicyJSON)
 	if err != nil {
 			log.Printf("DiffPolicies: Error creating merge patch: %v\n", err)
