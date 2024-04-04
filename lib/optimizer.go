@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 	"log"
+	"net/url"
 
 	"github.com/gigawattio/awsarn"
 	"github.com/flosell/iam-policy-json-to-terraform/converter"
@@ -220,26 +221,36 @@ func CheckForExactMatch(existingPolicyJSON, newPolicyJSON []byte) bool {
 }
 
 func QueryCurrentPolicy(options GenerateOptimizedPolicyOptions) ([]byte, error) {
-	log.Println("QueryCurrentPolicy: Starting query for current policy")
-	defer log.Println("QueryCurrentPolicy: Query for current policy completed")
-
 	// First, get the policy ARN
 	policyARN, err := getPolicyARN(options)
 	if err != nil {
-			log.Printf("QueryCurrentPolicy: Error getting policy ARN: %v\n", err)
 			return nil, err
 	}
 
 	// Get the default version ID of the policy
 	versionID, err := getPolicyDefaultVersionID(policyARN)
 	if err != nil {
-			log.Printf("QueryCurrentPolicy: Error getting default policy version ID: %v\n", err)
 			return nil, err
 	}
 
 	// Now, query the policy JSON using the obtained policy ARN and version ID
-	return getPolicyJSON(policyARN, versionID)
+	existingPolicyJSON, err := getPolicyJSON(policyARN, versionID)
+	if err != nil {
+			return nil, err
+	}
+
+	// Decode URL-encoded data, if needed
+	existingPolicyString, err := url.QueryUnescape(string(existingPolicyJSON))
+	if err != nil {
+			return nil, err
+	}
+
+	// Convert the decoded string back to a byte slice
+	existingPolicyJSON = []byte(existingPolicyString)
+
+	return existingPolicyJSON, nil
 }
+
 
 func getPolicyARN(options GenerateOptimizedPolicyOptions) (string, error) {
 	log.Println("getPolicyARN: Generating policy ARN")
