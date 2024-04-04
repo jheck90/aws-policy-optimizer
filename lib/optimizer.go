@@ -369,7 +369,8 @@ func getPolicyJSON(policyARN, versionID string) ([]byte, error) {
 
 	// Extract the policy JSON document from the response
 	policyDocument := aws.StringValue(resp.PolicyVersion.Document)
-
+	fmt.Println("Policy Document:", policyDocument)
+	
 	// Unmarshal the JSON document into a structured Go data type
 	var policy struct {
 			Statement []json.RawMessage `json:"Statement"`
