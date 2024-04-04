@@ -33,6 +33,23 @@ type GenerateOptimizedPolicyOptions struct {
 	Diff         bool
 }
 
+var (
+	iamSvc *iam.IAM
+)
+
+func initIAM(options GenerateOptimizedPolicyOptions) {
+	// Create a new session with the specified region
+	sess := session.Must(session.NewSessionWithOptions(session.Options{
+			SharedConfigState: session.SharedConfigEnable,
+			Config: aws.Config{
+					Region: aws.String(options.Region),
+			},
+	}))
+
+	// Initialize the IAM service client
+	iamSvc = iam.New(sess)
+}
+
 // GenerateOptimizedPolicy generates an optimized IAM policy based on the provided options
 func GenerateOptimizedPolicy(options GenerateOptimizedPolicyOptions) (string, error) {
 	start := time.Now().AddDate(0, 0, options.AnalysisPeriod*-1)
@@ -231,13 +248,6 @@ func getPolicyARN(options GenerateOptimizedPolicyOptions) (string, error) {
 }
 
 func getPolicyDefaultVersionID(policyARN string) (string, error) {
-	// Create an AWS session
-	sess := session.Must(session.NewSessionWithOptions(session.Options{
-			SharedConfigState: session.SharedConfigEnable,
-	}))
-
-	// Create an IAM client
-	svc := iam.New(sess)
 
 	// Input parameters for GetPolicyVersion API call
 	input := &iam.GetPolicyInput{
@@ -245,7 +255,7 @@ func getPolicyDefaultVersionID(policyARN string) (string, error) {
 	}
 
 	// Execute the GetPolicyVersion API call
-	resp, err := svc.GetPolicy(input)
+	resp, err := iamSvc.GetPolicy(input)
 	if err != nil {
 			return "", err
 	}
@@ -257,14 +267,6 @@ func getPolicyDefaultVersionID(policyARN string) (string, error) {
 }
 
 func getPolicyJSON(policyARN, versionID string) ([]byte, error) {
-	// Create an AWS session
-	sess := session.Must(session.NewSessionWithOptions(session.Options{
-			SharedConfigState: session.SharedConfigEnable,
-	}))
-
-	// Create an IAM client
-	svc := iam.New(sess)
-
 	// Input parameters for GetPolicyVersion API call
 	input := &iam.GetPolicyVersionInput{
 			PolicyArn: aws.String(policyARN),
@@ -272,7 +274,7 @@ func getPolicyJSON(policyARN, versionID string) ([]byte, error) {
 	}
 
 	// Execute the GetPolicyVersion API call
-	resp, err := svc.GetPolicyVersion(input)
+	resp, err := iamSvc.GetPolicyVersion(input)
 	if err != nil {
 			return nil, err
 	}
