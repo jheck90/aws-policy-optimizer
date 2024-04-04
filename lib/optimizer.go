@@ -345,7 +345,6 @@ func getPolicyDefaultVersionID(policyARN string) (string, error) {
 	return versionID, nil
 }
 
-// getPolicyJSON retrieves the JSON document of the IAM policy using the specified ARN and version ID
 func getPolicyJSON(policyARN, versionID string) ([]byte, error) {
 	// Create an AWS session
 	sess := session.Must(session.NewSessionWithOptions(session.Options{
@@ -367,15 +366,17 @@ func getPolicyJSON(policyARN, versionID string) ([]byte, error) {
 			return nil, err
 	}
 
-	// Extract the policy JSON document from the response
-	policyDocument := aws.StringValue(resp.PolicyVersion.Document)
-	fmt.Println("Policy Document:", policyDocument)
-	
+	// Decode URL-encoded policy document
+	decodedPolicyDocument, err := url.QueryUnescape(aws.StringValue(resp.PolicyVersion.Document))
+	if err != nil {
+			return nil, err
+	}
+
 	// Unmarshal the JSON document into a structured Go data type
 	var policy struct {
 			Statement []json.RawMessage `json:"Statement"`
 	}
-	if err := json.Unmarshal([]byte(policyDocument), &policy); err != nil {
+	if err := json.Unmarshal([]byte(decodedPolicyDocument), &policy); err != nil {
 			return nil, err
 	}
 
@@ -401,7 +402,6 @@ func getPolicyJSON(policyARN, versionID string) ([]byte, error) {
 
 	return actionsJSON, nil
 }
-
 
 func generateGlobPattern(ss []string) string {
 	if len(ss) == 0 {
