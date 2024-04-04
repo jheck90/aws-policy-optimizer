@@ -1,3 +1,5 @@
+// optimizer/optimizer.go
+
 package optimizer
 
 import (
@@ -8,26 +10,31 @@ import (
 	"time"
 
 	"github.com/gigawattio/awsarn"
-
 	"github.com/flosell/iam-policy-json-to-terraform/converter"
 	"github.com/micahhausler/aws-iam-policy/policy"
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/iam"
+	"github.com/evanphx/json-patch"
 )
 
+// GenerateOptimizedPolicyOptions represents the options for generating an optimized IAM policy
 type GenerateOptimizedPolicyOptions struct {
 	Database           string
 	Table              string
 	QueryResultsBucket string
 	QueryResultsPrefix string
 	AthenaWorkgroup    string
-	IAMRole			       string
+	IAMRole            string
 	AccountID          string
 	Region             string
 	OutputFormat       string
 	AnalysisPeriod     int
+	Diff         bool
 }
 
+// GenerateOptimizedPolicy generates an optimized IAM policy based on the provided options
 func GenerateOptimizedPolicy(options GenerateOptimizedPolicyOptions) (string, error) {
-
 	start := time.Now().AddDate(0, 0, options.AnalysisPeriod*-1)
 
 	sql := fmt.Sprintf(`
@@ -95,8 +102,7 @@ func GenerateOptimizedPolicy(options GenerateOptimizedPolicyOptions) (string, er
 			}
 
 			statements = append(statements, policy.Statement{
-				Effect: policy.EffectAllow,
-				// Principal: policy.NewServicePrincipal("cloudtrail.amazonaws.com"), // TODO: consider getting the principal
+				Effect:   policy.EffectAllow,
 				Action:   policy.NewStringOrSlice(false, actions...),
 				Resource: policy.NewStringOrSlice(false, consolidatedResources...),
 			},
@@ -104,37 +110,49 @@ func GenerateOptimizedPolicy(options GenerateOptimizedPolicyOptions) (string, er
 		}
 	}
 
+	// Query current policy
+	currentPolicyJSON, err := QueryCurrentPolicy(options)
+	if err != nil {
+		return "", err
+	}
+
+	// Generate new policy
 	p := policy.Policy{
 		Version:    policy.VersionLatest,
 		Id:         "GenIAMPolicy", // TODO: better ID
 		Statements: policy.NewStatementOrSlice(statements...),
 	}
 
+	newPolicyJSON, err := json.Marshal(p)
+	if err != nil {
+		return "", err
+	}
+
+	// Check for exact match
+	exactMatch := CheckForExactMatch(currentPolicyJSON, newPolicyJSON)
+	if exactMatch {
+		return "Found exact match", nil
+	}
+
+	// Diff policies if enabled
+	if options.Diff {
+		diffResult, err := DiffPolicies(currentPolicyJSON, newPolicyJSON)
+		if err != nil {
+			return "", err
+		}
+
+		if diffResult.DiffExists {
+			// Handle diff result
+		}
+	}
+
 	out, _ := json.MarshalIndent(p, "", "\t")
 
 	if options.OutputFormat == "hcl" {
 		return converter.Convert("GenIAMPolicy", out)
-
 	} else {
 		return string(out), nil
 	}
-}
-
-func generateGlobPattern(ss []string) string {
-	if len(ss) == 0 {
-		return ""
-	}
-
-	parts := strings.Split(ss[0], "/")
-	for i := 1; i < len(parts); i++ {
-		for _, s := range ss {
-			if !strings.HasPrefix(s, strings.Join(parts[:i+1], "/")) {
-				return strings.Join(parts[:i], "/") + "/*"
-			}
-		}
-	}
-
-	return strings.Join(parts, "/")
 }
 
 func consolidateARNs(arns []string) ([]string, error) {
@@ -166,6 +184,123 @@ func consolidateARNs(arns []string) ([]string, error) {
 	return ss, nil
 }
 
+// DiffPolicies diffs the current policy with the new policy
+func DiffPolicies(currentPolicyJSON, newPolicyJSON []byte) (DiffResult, error) {
+	patch, err := jsonpatch.CreateMergePatch(currentPolicyJSON, newPolicyJSON)
+	if err != nil {
+		return DiffResult{}, err
+	}
+
+	// If patch is empty, policies are equal
+	diffExists := len(patch) > 0
+
+	return DiffResult{DiffExists: diffExists}, nil
+}
+
+// DiffResult represents the result of a policy diff
+type DiffResult struct {
+	DiffExists bool
+}
+
+// CheckForExactMatch checks if the generated policy matches the existing policy exactly
+func CheckForExactMatch(existingPolicyJSON, newPolicyJSON []byte) bool {
+	return reflect.DeepEqual(existingPolicyJSON, newPolicyJSON)
+}
+
+func QueryCurrentPolicy(options GenerateOptimizedPolicyOptions) ([]byte, error) {
+	// First, get the policy ARN
+	policyARN, err := getPolicyARN(options)
+	if err != nil {
+			return nil, err
+	}
+
+	// Get the default version ID of the policy
+	versionID, err := getPolicyDefaultVersionID(policyARN)
+	if err != nil {
+			return nil, err
+	}
+
+	// Now, query the policy JSON using the obtained policy ARN and version ID
+	return getPolicyJSON(policyARN, versionID)
+}
+
+func getPolicyARN(options GenerateOptimizedPolicyOptions) (string, error) {
+    // Assuming roleName is in the format provided in the question
+    policyARN := fmt.Sprintf("arn:aws:iam::%s:policy/%s", options.AccountID, options.IAMRole)
+    return policyARN, nil
+}
+
+func getPolicyDefaultVersionID(policyARN string) (string, error) {
+	// Create an AWS session
+	sess := session.Must(session.NewSessionWithOptions(session.Options{
+			SharedConfigState: session.SharedConfigEnable,
+	}))
+
+	// Create an IAM client
+	svc := iam.New(sess)
+
+	// Input parameters for GetPolicyVersion API call
+	input := &iam.GetPolicyInput{
+			PolicyArn: aws.String(policyARN),
+	}
+
+	// Execute the GetPolicyVersion API call
+	resp, err := svc.GetPolicy(input)
+	if err != nil {
+			return "", err
+	}
+
+	// Extract the default version ID from the response
+	versionID := aws.StringValue(resp.Policy.DefaultVersionId)
+
+	return versionID, nil
+}
+
+func getPolicyJSON(policyARN, versionID string) ([]byte, error) {
+	// Create an AWS session
+	sess := session.Must(session.NewSessionWithOptions(session.Options{
+			SharedConfigState: session.SharedConfigEnable,
+	}))
+
+	// Create an IAM client
+	svc := iam.New(sess)
+
+	// Input parameters for GetPolicyVersion API call
+	input := &iam.GetPolicyVersionInput{
+			PolicyArn: aws.String(policyARN),
+			VersionId: aws.String(versionID),
+	}
+
+	// Execute the GetPolicyVersion API call
+	resp, err := svc.GetPolicyVersion(input)
+	if err != nil {
+			return nil, err
+	}
+
+	// Extract the policy JSON document from the response
+	policyDocument := aws.StringValue(resp.PolicyVersion.Document)
+
+	return []byte(policyDocument), nil
+}
+
+func generateGlobPattern(ss []string) string {
+	if len(ss) == 0 {
+		return ""
+	}
+
+	parts := strings.Split(ss[0], "/")
+	for i := 1; i < len(parts); i++ {
+		for _, s := range ss {
+			if !strings.HasPrefix(s, strings.Join(parts[:i+1], "/")) {
+				return strings.Join(parts[:i], "/") + "/*"
+			}
+		}
+	}
+
+	return strings.Join(parts, "/")
+}
+
+// UsageHistoryRecord represents a record in the usage history
 type UsageHistoryRecord struct {
 	UserIdenityArn string `csv:"useridentity"`
 	Permission     string `csv:"permission"`

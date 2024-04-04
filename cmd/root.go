@@ -26,6 +26,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&options.QueryResultsPrefix, "query-results-prefix", "", "(optional) S3 bucket for Athena query prefix")
 	rootCmd.PersistentFlags().StringVar(&options.OutputFormat, "output-format", "json", "json or hcl")
 	rootCmd.PersistentFlags().IntVar(&options.AnalysisPeriod, "analysis-period", 90, "how far back into the access records to look")
+	rootCmd.PersistentFlags().BoolVar(&options.Diff, "diff", false, "set true to view diff from current to proposed new policy")
 
 	rootCmd.MarkPersistentFlagRequired("iam-role")
 	rootCmd.MarkPersistentFlagRequired("account-id")
