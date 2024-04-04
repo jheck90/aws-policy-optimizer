@@ -191,6 +191,7 @@ func consolidateARNs(arns []string) ([]string, error) {
 }
 
 
+// ComparePolicies compares the actions and resources within IAM policies and writes the differences to the specified file if diffFile is provided
 func ComparePolicies(existingPolicyJSON, newPolicyJSON []byte, diffFile string) error {
 	var existingPolicy, newPolicy map[string]interface{}
 	if err := json.Unmarshal(existingPolicyJSON, &existingPolicy); err != nil {
@@ -204,8 +205,14 @@ func ComparePolicies(existingPolicyJSON, newPolicyJSON []byte, diffFile string) 
 	var comparisons []string
 
 	// Extract actions and resources from existing and new policies
-	existingActions := getActions(existingPolicy)
-	newActions := getActions(newPolicy)
+	existingActions, err := getActions(existingPolicy)
+	if err != nil {
+		return fmt.Errorf("error extracting actions from existing policy: %w", err)
+	}
+	newActions, err := getActions(newPolicy)
+	if err != nil {
+		return fmt.Errorf("error extracting actions from new policy: %w", err)
+	}
 
 	// Compare actions present in existing policy but not in new policy
 	for action, existingResources := range existingActions {
@@ -229,7 +236,6 @@ func ComparePolicies(existingPolicyJSON, newPolicyJSON []byte, diffFile string) 
 
 	return nil
 }
-
 
 
 // getStatements extracts actions and resources from IAM policy statements
@@ -365,22 +371,44 @@ func getPolicyJSON(policyARN, versionID string) ([]byte, error) {
 	return []byte(decodedPolicyDocument), nil
 }
 
-func getActions(policy map[string]interface{}) map[string][]interface{} {
-	actions := make(map[string][]interface{})
-	if statements, ok := policy["Statement"].([]interface{}); ok {
-		for _, statement := range statements {
-			if stmt, ok := statement.(map[string]interface{}); ok {
-				if action, ok := stmt["Action"].([]interface{}); ok {
-					resources := stmt["Resource"].([]interface{})
-					for _, act := range action {
-						actionStr := act.(string)
-						actions[actionStr] = resources
-					}
-				}
-			}
-		}
+// getActions extracts actions from the policy JSON document
+func getActions(policy map[string]interface{}) (map[string][]string, error) {
+	actions := make(map[string][]string)
+
+	// Log the policy structure to understand its format
+	log.Printf("Policy: %+v\n", policy)
+
+	// Extract actions from the policy
+	statements, ok := policy["Statement"].([]interface{})
+	if !ok {
+			return nil, fmt.Errorf("invalid or missing 'Statement' field in policy")
 	}
-	return actions
+	log.Printf("Statements: %+v\n", statements)
+
+	for _, statement := range statements {
+			// Convert the statement to a map
+			stmt, ok := statement.(map[string]interface{})
+			if !ok {
+					return nil, fmt.Errorf("invalid statement format")
+			}
+
+			// Extract the action from the statement
+			action, ok := stmt["Action"].(string) // Assuming Action is a string
+			if !ok {
+					return nil, fmt.Errorf("invalid or missing 'Action' field in statement")
+			}
+
+			// Extract the resources from the statement
+			resources, ok := stmt["Resource"].([]string) // Assuming Resource is a string array
+			if !ok {
+					return nil, fmt.Errorf("invalid or missing 'Resource' field in statement")
+			}
+
+			// Add the action and resources to the map
+			actions[action] = resources
+	}
+
+	return actions, nil
 }
 
 
