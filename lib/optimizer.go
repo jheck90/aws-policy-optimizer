@@ -373,12 +373,18 @@ func getPolicyJSON(policyARN, versionID string) ([]byte, error) {
 		return nil, err
 	}
 
+	// Print the decoded policy document for debugging
+	fmt.Println("Decoded Policy Document:", decodedPolicyDocument)
+
 	// Unmarshal the JSON document into a map[string]interface{}
 	var policyMap map[string]interface{}
 	if err := json.Unmarshal([]byte(decodedPolicyDocument), &policyMap); err != nil {
 		return nil, err
 	}
 
+	// Print the policy map for debugging
+	fmt.Println("Policy Map:", policyMap)
+	
 	// Extract individual actions/statements from the policy
 	var actions []string
 	statements, ok := policyMap["Statement"].([]interface{})
