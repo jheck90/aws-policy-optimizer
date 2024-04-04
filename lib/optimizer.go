@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"strings"
 	"time"
+	"log"
 
 	"github.com/gigawattio/awsarn"
 	"github.com/flosell/iam-policy-json-to-terraform/converter"
@@ -31,6 +32,11 @@ type GenerateOptimizedPolicyOptions struct {
 	OutputFormat       string
 	AnalysisPeriod     int
 	Diff       			   bool
+}
+
+// DiffResult represents the result of a policy diff
+type DiffResult struct {
+	DiffExists bool
 }
 
 // GenerateOptimizedPolicy generates an optimized IAM policy based on the provided options
@@ -186,37 +192,45 @@ func consolidateARNs(arns []string) ([]string, error) {
 
 // DiffPolicies diffs the current policy with the new policy
 func DiffPolicies(currentPolicyJSON, newPolicyJSON []byte) (DiffResult, error) {
+	log.Println("DiffPolicies: Starting diff operation")
+	defer log.Println("DiffPolicies: Diff operation completed")
+
 	patch, err := jsonpatch.CreateMergePatch(currentPolicyJSON, newPolicyJSON)
 	if err != nil {
-		return DiffResult{}, err
+			log.Printf("DiffPolicies: Error creating merge patch: %v\n", err)
+			return DiffResult{}, err
 	}
 
 	// If patch is empty, policies are equal
 	diffExists := len(patch) > 0
 
+	log.Printf("DiffPolicies: Diff exists: %t\n", diffExists)
 	return DiffResult{DiffExists: diffExists}, nil
-}
-
-// DiffResult represents the result of a policy diff
-type DiffResult struct {
-	DiffExists bool
 }
 
 // CheckForExactMatch checks if the generated policy matches the existing policy exactly
 func CheckForExactMatch(existingPolicyJSON, newPolicyJSON []byte) bool {
+	log.Println("CheckForExactMatch: Starting exact match check")
+	defer log.Println("CheckForExactMatch: Exact match check completed")
+
 	return reflect.DeepEqual(existingPolicyJSON, newPolicyJSON)
 }
 
 func QueryCurrentPolicy(options GenerateOptimizedPolicyOptions) ([]byte, error) {
+	log.Println("QueryCurrentPolicy: Starting query for current policy")
+	defer log.Println("QueryCurrentPolicy: Query for current policy completed")
+
 	// First, get the policy ARN
 	policyARN, err := getPolicyARN(options)
 	if err != nil {
+			log.Printf("QueryCurrentPolicy: Error getting policy ARN: %v\n", err)
 			return nil, err
 	}
 
 	// Get the default version ID of the policy
 	versionID, err := getPolicyDefaultVersionID(policyARN)
 	if err != nil {
+			log.Printf("QueryCurrentPolicy: Error getting default policy version ID: %v\n", err)
 			return nil, err
 	}
 
@@ -225,12 +239,18 @@ func QueryCurrentPolicy(options GenerateOptimizedPolicyOptions) ([]byte, error) 
 }
 
 func getPolicyARN(options GenerateOptimizedPolicyOptions) (string, error) {
-    // Assuming roleName is in the format provided in the question
-    policyARN := fmt.Sprintf("arn:aws:iam::%s:policy/%s", options.AccountID, options.IAMRole)
-    return policyARN, nil
+	log.Println("getPolicyARN: Generating policy ARN")
+	defer log.Println("getPolicyARN: Policy ARN generated")
+
+	// Assuming roleName is in the format provided in the question
+	policyARN := fmt.Sprintf("arn:aws:iam::%s:policy/%s", options.AccountID, options.IAMRole)
+	return policyARN, nil
 }
 
 func getPolicyDefaultVersionID(policyARN string) (string, error) {
+	log.Println("getPolicyDefaultVersionID: Retrieving default policy version ID")
+	defer log.Println("getPolicyDefaultVersionID: Default policy version ID retrieved")
+
 	// Create an AWS session
 	sess := session.Must(session.NewSessionWithOptions(session.Options{
 			SharedConfigState: session.SharedConfigEnable,
@@ -247,6 +267,7 @@ func getPolicyDefaultVersionID(policyARN string) (string, error) {
 	// Execute the GetPolicyVersion API call
 	resp, err := svc.GetPolicy(input)
 	if err != nil {
+			log.Printf("getPolicyDefaultVersionID: Error retrieving policy: %v\n", err)
 			return "", err
 	}
 
@@ -257,6 +278,9 @@ func getPolicyDefaultVersionID(policyARN string) (string, error) {
 }
 
 func getPolicyJSON(policyARN, versionID string) ([]byte, error) {
+	log.Println("getPolicyJSON: Retrieving policy JSON document")
+	defer log.Println("getPolicyJSON: Policy JSON document retrieved")
+
 	// Create an AWS session
 	sess := session.Must(session.NewSessionWithOptions(session.Options{
 			SharedConfigState: session.SharedConfigEnable,
@@ -274,6 +298,7 @@ func getPolicyJSON(policyARN, versionID string) ([]byte, error) {
 	// Execute the GetPolicyVersion API call
 	resp, err := svc.GetPolicyVersion(input)
 	if err != nil {
+			log.Printf("getPolicyJSON: Error retrieving policy version: %v\n", err)
 			return nil, err
 	}
 
