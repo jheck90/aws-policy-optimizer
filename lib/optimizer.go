@@ -267,37 +267,34 @@ func CheckForExactMatch(existingPolicyJSON, newPolicyJSON []byte) bool {
 	return reflect.DeepEqual(existingPolicyJSON, newPolicyJSON)
 }
 
+// QueryCurrentPolicy queries the current IAM policy and returns its JSON representation
 func QueryCurrentPolicy(options GenerateOptimizedPolicyOptions) ([]byte, error) {
 	// First, get the policy ARN
 	policyARN, err := getPolicyARN(options)
 	if err != nil {
+			log.Printf("Error getting policy ARN: %v\n", err)
 			return nil, err
 	}
+	log.Printf("Policy ARN: %s\n", policyARN)
 
 	// Get the default version ID of the policy
 	versionID, err := getPolicyDefaultVersionID(policyARN)
 	if err != nil {
+			log.Printf("Error getting policy default version ID: %v\n", err)
 			return nil, err
 	}
+	log.Printf("Policy default version ID: %s\n", versionID)
 
 	// Now, query the policy JSON using the obtained policy ARN and version ID
 	existingPolicyJSON, err := getPolicyJSON(policyARN, versionID)
 	if err != nil {
+			log.Printf("Error getting policy JSON: %v\n", err)
 			return nil, err
 	}
-
-	// Decode URL-encoded data, if needed
-	existingPolicyString, err := url.QueryUnescape(string(existingPolicyJSON))
-	if err != nil {
-			return nil, err
-	}
-
-	// Convert the decoded string back to a byte slice
-	existingPolicyJSON = []byte(existingPolicyString)
+	log.Printf("Existing policy JSON: %s\n", existingPolicyJSON)
 
 	return existingPolicyJSON, nil
 }
-
 
 func getPolicyARN(options GenerateOptimizedPolicyOptions) (string, error) {
 	log.Println("getPolicyARN: Generating policy ARN")
