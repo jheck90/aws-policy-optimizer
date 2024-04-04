@@ -207,11 +207,11 @@ func ComparePolicies(existingPolicyJSON, newPolicyJSON []byte, diffFile string) 
 	existingStatements := getStatements(existingPolicy)
 	newStatements := getStatements(newPolicy)
 
-	// Compare statements
+	// Compare statements present in existing policy but not in new policy
 	for action, existingResources := range existingStatements {
 			newResources, ok := newStatements[action]
 			if !ok {
-					comparisons = append(comparisons, fmt.Sprintf("%-30s | %s | %v\n", action, "MISSING IN NEW POLICY", existingResources))
+					comparisons = append(comparisons, fmt.Sprintf("%-30s | %v | %s\n", action, existingResources, "MISSING IN NEW POLICY"))
 					continue
 			}
 			if !reflect.DeepEqual(existingResources, newResources) {
@@ -219,6 +219,7 @@ func ComparePolicies(existingPolicyJSON, newPolicyJSON []byte, diffFile string) 
 			}
 	}
 
+	// Compare statements present in new policy but not in existing policy
 	for action, newResources := range newStatements {
 			_, ok := existingStatements[action]
 			if !ok {
@@ -234,6 +235,7 @@ func ComparePolicies(existingPolicyJSON, newPolicyJSON []byte, diffFile string) 
 
 	return nil
 }
+
 
 // getStatements extracts actions and resources from IAM policy statements
 func getStatements(policy map[string]interface{}) map[string][]string {
