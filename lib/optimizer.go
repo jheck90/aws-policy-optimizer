@@ -10,6 +10,7 @@ import (
 	"time"
 	"log"
 	"net/url"
+	"os"
 
 	"github.com/gigawattio/awsarn"
 	"github.com/flosell/iam-policy-json-to-terraform/converter"
@@ -33,6 +34,7 @@ type GenerateOptimizedPolicyOptions struct {
 	OutputFormat       string
 	AnalysisPeriod     int
 	Diff       			   bool
+	DiffFile					 string
 }
 
 // DiffResult represents the result of a policy diff
@@ -141,17 +143,23 @@ func GenerateOptimizedPolicy(options GenerateOptimizedPolicyOptions) (string, er
 		return "Found exact match", nil
 	}
 
-	// Diff policies if enabled
-	if options.Diff {
-		diffResult, err := DiffPolicies(currentPolicyJSON, newPolicyJSON)
-		if err != nil {
-			return "", err
-		}
+    // Diff policies if enabled
+    if options.Diff {
+			// Diff the policies
+			diffContent, err := DiffPolicies(currentPolicyJSON, newPolicyJSON)
+			if err != nil {
+					return "", err
+			}
 
-		if diffResult.DiffExists {
-			// Handle diff result
-		}
+			// If diff flag is provided, write the diff to the specified file
+			if options.DiffFile != "" {
+					err := writeDiffToFile(options.DiffFile, diffContent)
+					if err != nil {
+							return "", err
+					}
+			}
 	}
+
 
 	out, _ := json.MarshalIndent(p, "", "\t")
 
@@ -190,26 +198,17 @@ func consolidateARNs(arns []string) ([]string, error) {
 
 	return ss, nil
 }
-
-// DiffPolicies diffs the current policy with the new policy
-func DiffPolicies(currentPolicyJSON, newPolicyJSON []byte) (DiffResult, error) {
-	log.Println("DiffPolicies: Starting diff operation")
-	defer log.Println("DiffPolicies: Diff operation completed")
-
-	log.Printf("DiffPolicies: Current policy JSON: %s\n", string(currentPolicyJSON))
-	log.Printf("DiffPolicies: New policy JSON: %s\n", string(newPolicyJSON))
-
+func DiffPolicies(currentPolicyJSON, newPolicyJSON []byte) (string, error) {
+	// Create the diff patch
 	patch, err := jsonpatch.CreateMergePatch(currentPolicyJSON, newPolicyJSON)
 	if err != nil {
-			log.Printf("DiffPolicies: Error creating merge patch: %v\n", err)
-			return DiffResult{}, err
+			return "", err
 	}
 
-	// If patch is empty, policies are equal
-	diffExists := len(patch) > 0
+	// Convert the diff patch to a string
+	diffContent := string(patch)
 
-	log.Printf("DiffPolicies: Diff exists: %t\n", diffExists)
-	return DiffResult{DiffExists: diffExists}, nil
+	return diffContent, nil
 }
 
 // CheckForExactMatch checks if the generated policy matches the existing policy exactly
@@ -337,6 +336,16 @@ func generateGlobPattern(ss []string) string {
 	}
 
 	return strings.Join(parts, "/")
+}
+
+func writeDiffToFile(filePath, diffContent string) error {
+	// Write the diff content to the specified file
+	err := os.WriteFile(filePath, []byte(diffContent), 0644)
+	if err != nil {
+			return err
+	}
+
+	return nil
 }
 
 // UsageHistoryRecord represents a record in the usage history

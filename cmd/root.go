@@ -27,6 +27,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&options.OutputFormat, "output-format", "json", "json or hcl")
 	rootCmd.PersistentFlags().IntVar(&options.AnalysisPeriod, "analysis-period", 90, "how far back into the access records to look")
 	rootCmd.PersistentFlags().BoolVar(&options.Diff, "diff", false, "set true to view diff from current to proposed new policy")
+	rootCmd.PersistentFlags().StringVar(&options.DiffFile, "diff-file", "diff.json", "where to place diff file from current to proposed new policy")
 
 	rootCmd.MarkPersistentFlagRequired("iam-role")
 	rootCmd.MarkPersistentFlagRequired("account-id")
