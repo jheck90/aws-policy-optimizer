@@ -10,7 +10,7 @@ import (
 	"time"
 	"log"
 	"net/url"
-	"os"
+	"io/ioutil"
 
 	"github.com/gigawattio/awsarn"
 	"github.com/flosell/iam-policy-json-to-terraform/converter"
@@ -18,7 +18,6 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/iam"
-	"github.com/evanphx/json-patch"
 )
 
 // GenerateOptimizedPolicyOptions represents the options for generating an optimized IAM policy
@@ -146,7 +145,7 @@ func GenerateOptimizedPolicy(options GenerateOptimizedPolicyOptions) (string, er
 // Diff policies if enabled
 if options.Diff {
 	// Call DiffPolicies to generate the diff and write it to the file
-	err := DiffPolicies(currentPolicyJSON, newPolicyJSON, options.DiffFile)
+	err := ComparePolicies(currentPolicyJSON, newPolicyJSON, options.DiffFile)
 	if err != nil {
 			return "", err
 	}
@@ -189,24 +188,47 @@ func consolidateARNs(arns []string) ([]string, error) {
 
 	return ss, nil
 }
-func DiffPolicies(currentPolicyJSON, newPolicyJSON []byte, diffFile string) error {
-	// Create the diff patch
-	patch, err := jsonpatch.CreateMergePatch(currentPolicyJSON, newPolicyJSON)
-	if err != nil {
-			return err
+
+// ComparePolicies compares two IAM policies and writes the differences to the specified file
+func ComparePolicies(existingPolicyJSON, newPolicyJSON []byte, diffFile string) error {
+	var existingPolicy, newPolicy map[string]interface{}
+	if err := json.Unmarshal(existingPolicyJSON, &existingPolicy); err != nil {
+			return fmt.Errorf("error unmarshaling existing policy JSON: %w", err)
+	}
+	if err := json.Unmarshal(newPolicyJSON, &newPolicy); err != nil {
+			return fmt.Errorf("error unmarshaling new policy JSON: %w", err)
 	}
 
-	// Open the diff file for writing
-	file, err := os.Create(diffFile)
-	if err != nil {
-			return err
-	}
-	defer file.Close()
+	// Create a slice to hold the comparison results
+	var comparisons []string
 
-	// Write the diff patch to the file
-	_, err = file.Write(patch)
+	// Iterate through existing policy keys
+	for key, value := range existingPolicy {
+			// Check if key exists in new policy
+			newValue, ok := newPolicy[key]
+			if !ok {
+					comparisons = append(comparisons, fmt.Sprintf("%-30s | %v | %s\n", key, value, "MISSING IN NEW POLICY"))
+					continue
+			}
+
+			// Check if values are equal
+			if !reflect.DeepEqual(value, newValue) {
+					comparisons = append(comparisons, fmt.Sprintf("%-30s | %v | %v\n", key, value, newValue))
+			}
+	}
+
+	// Check for keys in new policy missing in existing policy
+	for key, value := range newPolicy {
+			_, ok := existingPolicy[key]
+			if !ok {
+					comparisons = append(comparisons, fmt.Sprintf("%-30s | %s | %v\n", key, "MISSING IN EXISTING POLICY", value))
+			}
+	}
+
+	// Write comparison results to the specified file
+	err := ioutil.WriteFile(diffFile, []byte(strings.Join(comparisons, "")), 0644)
 	if err != nil {
-			return err
+			return fmt.Errorf("error writing comparison results to file: %w", err)
 	}
 
 	return nil
@@ -339,15 +361,15 @@ func generateGlobPattern(ss []string) string {
 	return strings.Join(parts, "/")
 }
 
-func writeDiffToFile(filePath, diffContent string) error {
-	// Write the diff content to the specified file
-	err := os.WriteFile(filePath, []byte(diffContent), 0644)
-	if err != nil {
-			return err
-	}
+// func writeDiffToFile(filePath, diffContent string) error {
+// 	// Write the diff content to the specified file
+// 	err := os.WriteFile(filePath, []byte(diffContent), 0644)
+// 	if err != nil {
+// 			return err
+// 	}
 
-	return nil
-}
+// 	return nil
+// }
 
 // UsageHistoryRecord represents a record in the usage history
 type UsageHistoryRecord struct {
