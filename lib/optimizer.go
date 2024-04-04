@@ -189,7 +189,8 @@ func consolidateARNs(arns []string) ([]string, error) {
 	return ss, nil
 }
 
-// ComparePolicies compares two IAM policies and writes the differences to the specified file
+
+// ComparePolicies compares the actions and resources within IAM policies and writes the differences to the specified file
 func ComparePolicies(existingPolicyJSON, newPolicyJSON []byte, diffFile string) error {
 	var existingPolicy, newPolicy map[string]interface{}
 	if err := json.Unmarshal(existingPolicyJSON, &existingPolicy); err != nil {
@@ -202,26 +203,26 @@ func ComparePolicies(existingPolicyJSON, newPolicyJSON []byte, diffFile string) 
 	// Create a slice to hold the comparison results
 	var comparisons []string
 
-	// Iterate through existing policy keys
-	for key, value := range existingPolicy {
-			// Check if key exists in new policy
-			newValue, ok := newPolicy[key]
+	// Extract statements from existing and new policies
+	existingStatements := getStatements(existingPolicy)
+	newStatements := getStatements(newPolicy)
+
+	// Compare statements
+	for action, existingResources := range existingStatements {
+			newResources, ok := newStatements[action]
 			if !ok {
-					comparisons = append(comparisons, fmt.Sprintf("%-30s | %v | %s\n", key, value, "MISSING IN NEW POLICY"))
+					comparisons = append(comparisons, fmt.Sprintf("%-30s | %s | %v\n", action, "MISSING IN NEW POLICY", existingResources))
 					continue
 			}
-
-			// Check if values are equal
-			if !reflect.DeepEqual(value, newValue) {
-					comparisons = append(comparisons, fmt.Sprintf("%-30s | %v | %v\n", key, value, newValue))
+			if !reflect.DeepEqual(existingResources, newResources) {
+					comparisons = append(comparisons, fmt.Sprintf("%-30s | %v | %v\n", action, existingResources, newResources))
 			}
 	}
 
-	// Check for keys in new policy missing in existing policy
-	for key, value := range newPolicy {
-			_, ok := existingPolicy[key]
+	for action, newResources := range newStatements {
+			_, ok := existingStatements[action]
 			if !ok {
-					comparisons = append(comparisons, fmt.Sprintf("%-30s | %s | %v\n", key, "MISSING IN EXISTING POLICY", value))
+					comparisons = append(comparisons, fmt.Sprintf("%-30s | %s | %v\n", action, "MISSING IN EXISTING POLICY", newResources))
 			}
 	}
 
@@ -234,6 +235,33 @@ func ComparePolicies(existingPolicyJSON, newPolicyJSON []byte, diffFile string) 
 	return nil
 }
 
+// getStatements extracts actions and resources from IAM policy statements
+func getStatements(policy map[string]interface{}) map[string][]string {
+	statements := make(map[string][]string)
+	if stmts, ok := policy["Statement"].([]interface{}); ok {
+			for _, stmt := range stmts {
+					if statement, ok := stmt.(map[string]interface{}); ok {
+							actions := getStringSlice(statement["Action"])
+							resources := getStringSlice(statement["Resource"])
+							for _, action := range actions {
+									statements[action] = resources
+							}
+					}
+			}
+	}
+	return statements
+}
+
+// getStringSlice converts an interface{} to a []string
+func getStringSlice(value interface{}) []string {
+	if strSlice, ok := value.([]string); ok {
+			return strSlice
+	}
+	if str, ok := value.(string); ok {
+			return []string{str}
+	}
+	return nil
+}
 // CheckForExactMatch checks if the generated policy matches the existing policy exactly
 func CheckForExactMatch(existingPolicyJSON, newPolicyJSON []byte) bool {
 	log.Println("CheckForExactMatch: Starting exact match check")
