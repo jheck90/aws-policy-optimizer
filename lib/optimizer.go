@@ -371,41 +371,32 @@ func getPolicyJSON(policyARN, versionID string) ([]byte, error) {
 	return []byte(decodedPolicyDocument), nil
 }
 
-// getActions extracts actions from the policy JSON document
 func getActions(policy map[string]interface{}) (map[string][]string, error) {
 	actions := make(map[string][]string)
 
-	// Log the policy structure to understand its format
-	log.Printf("Policy: %+v\n", policy)
-
-	// Extract actions from the policy
 	statements, ok := policy["Statement"].([]interface{})
 	if !ok {
-			return nil, fmt.Errorf("invalid or missing 'Statement' field in policy")
+		return nil, fmt.Errorf("invalid or missing 'Statement' field in policy")
 	}
-	log.Printf("Statements: %+v\n", statements)
 
-	for _, statement := range statements {
-			// Convert the statement to a map
-			stmt, ok := statement.(map[string]interface{})
+	for _, stmt := range statements {
+		statement, ok := stmt.(map[string]interface{})
+		if !ok {
+			return nil, fmt.Errorf("invalid statement format in policy")
+		}
+
+		action, ok := statement["Action"].([]interface{})
+		if !ok {
+			return nil, fmt.Errorf("invalid or missing 'Action' field in statement")
+		}
+
+		for _, a := range action {
+			act, ok := a.(string)
 			if !ok {
-					return nil, fmt.Errorf("invalid statement format")
+				return nil, fmt.Errorf("invalid action format in statement")
 			}
-
-			// Extract the action from the statement
-			action, ok := stmt["Action"].(string) // Assuming Action is a string
-			if !ok {
-					return nil, fmt.Errorf("invalid or missing 'Action' field in statement")
-			}
-
-			// Extract the resources from the statement
-			resources, ok := stmt["Resource"].([]string) // Assuming Resource is a string array
-			if !ok {
-					return nil, fmt.Errorf("invalid or missing 'Resource' field in statement")
-			}
-
-			// Add the action and resources to the map
-			actions[action] = resources
+			actions[act] = append(actions[act], "")
+		}
 	}
 
 	return actions, nil
