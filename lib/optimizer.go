@@ -190,7 +190,7 @@ func consolidateARNs(arns []string) ([]string, error) {
 }
 
 
-// ComparePolicies compares the actions and resources within IAM policies and writes the differences to the specified file
+// ComparePolicies compares the actions and resources within IAM policies and writes the differences to the specified file if diffFile is provided
 func ComparePolicies(existingPolicyJSON, newPolicyJSON []byte, diffFile string) error {
 	var existingPolicy, newPolicy map[string]interface{}
 	if err := json.Unmarshal(existingPolicyJSON, &existingPolicy); err != nil {
@@ -227,10 +227,12 @@ func ComparePolicies(existingPolicyJSON, newPolicyJSON []byte, diffFile string) 
 			}
 	}
 
-	// Write comparison results to the specified file
-	err := ioutil.WriteFile(diffFile, []byte(strings.Join(comparisons, "")), 0644)
-	if err != nil {
-			return fmt.Errorf("error writing comparison results to file: %w", err)
+	// Write comparison results to the specified file if diffFile is provided
+	if diffFile != "" {
+			err := ioutil.WriteFile(diffFile, []byte(strings.Join(comparisons, "")), 0644)
+			if err != nil {
+					return fmt.Errorf("error writing comparison results to file: %w", err)
+			}
 	}
 
 	return nil
@@ -343,10 +345,8 @@ func getPolicyDefaultVersionID(policyARN string) (string, error) {
 	return versionID, nil
 }
 
+// getPolicyJSON retrieves the JSON document of the IAM policy using the specified ARN and version ID
 func getPolicyJSON(policyARN, versionID string) ([]byte, error) {
-	log.Println("getPolicyJSON: Retrieving policy JSON document")
-	defer log.Println("getPolicyJSON: Policy JSON document retrieved")
-
 	// Create an AWS session
 	sess := session.Must(session.NewSessionWithOptions(session.Options{
 			SharedConfigState: session.SharedConfigEnable,
@@ -364,15 +364,43 @@ func getPolicyJSON(policyARN, versionID string) ([]byte, error) {
 	// Execute the GetPolicyVersion API call
 	resp, err := svc.GetPolicyVersion(input)
 	if err != nil {
-			log.Printf("getPolicyJSON: Error retrieving policy version: %v\n", err)
 			return nil, err
 	}
 
 	// Extract the policy JSON document from the response
 	policyDocument := aws.StringValue(resp.PolicyVersion.Document)
 
-	return []byte(policyDocument), nil
+	// Unmarshal the JSON document into a structured Go data type
+	var policy struct {
+			Statement []json.RawMessage `json:"Statement"`
+	}
+	if err := json.Unmarshal([]byte(policyDocument), &policy); err != nil {
+			return nil, err
+	}
+
+	// Create a slice to hold individual actions/statements
+	var actions []string
+
+	// Extract individual actions/statements from the policy
+	for _, statement := range policy.Statement {
+			var stmt struct {
+					Action []string `json:"Action"`
+			}
+			if err := json.Unmarshal(statement, &stmt); err != nil {
+					return nil, err
+			}
+			actions = append(actions, stmt.Action...)
+	}
+
+	// Convert the actions to JSON format
+	actionsJSON, err := json.Marshal(actions)
+	if err != nil {
+			return nil, err
+	}
+
+	return actionsJSON, nil
 }
+
 
 func generateGlobPattern(ss []string) string {
 	if len(ss) == 0 {
@@ -391,15 +419,6 @@ func generateGlobPattern(ss []string) string {
 	return strings.Join(parts, "/")
 }
 
-// func writeDiffToFile(filePath, diffContent string) error {
-// 	// Write the diff content to the specified file
-// 	err := os.WriteFile(filePath, []byte(diffContent), 0644)
-// 	if err != nil {
-// 			return err
-// 	}
-
-// 	return nil
-// }
 
 // UsageHistoryRecord represents a record in the usage history
 type UsageHistoryRecord struct {
