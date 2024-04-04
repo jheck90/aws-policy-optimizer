@@ -374,9 +374,13 @@ func getPolicyJSON(policyARN, versionID string) ([]byte, error) {
 func getActions(policy map[string]interface{}) (map[string][]string, error) {
 	actions := make(map[string][]string)
 
-	statements, ok := policy["Statements"].([]interface{})
+	// Check if 'Statement' or 'statements' field exists
+	statements, ok := policy["Statement"].([]interface{})
 	if !ok {
-		return nil, fmt.Errorf("invalid or missing 'Statements' field in policy")
+		statements, ok = policy["statements"].([]interface{})
+		if !ok {
+			return nil, fmt.Errorf("invalid or missing 'Statement' or 'statements' field in policy")
+		}
 	}
 
 	fmt.Println("Number of statements found:", len(statements))
@@ -389,21 +393,34 @@ func getActions(policy map[string]interface{}) (map[string][]string, error) {
 			return nil, fmt.Errorf("invalid statement format in policy")
 		}
 
+		// Check if 'Action' or 'actions' field exists
 		action, ok := statement["Action"].(string)
 		if !ok {
-			return nil, fmt.Errorf("invalid or missing 'Action' field in statement")
+			actionSlice, ok := statement["actions"].([]interface{})
+			if !ok {
+				return nil, fmt.Errorf("invalid or missing 'Action' or 'actions' field in statement")
+			}
+
+			fmt.Printf("Actions found in statement #%d: %v\n", i+1, actionSlice)
+
+			// Convert action slice to string slice
+			for _, a := range actionSlice {
+				actionStr, ok := a.(string)
+				if !ok {
+					return nil, fmt.Errorf("invalid action format in statement")
+				}
+				actions[actionStr] = append(actions[actionStr], "")
+			}
+		} else {
+			fmt.Printf("Action found in statement #%d: %s\n", i+1, action)
+			actions[action] = append(actions[action], "")
 		}
-
-		fmt.Printf("Action found in statement #%d: %s\n", i+1, action)
-
-		actions[action] = append(actions[action], "")
 	}
 
 	fmt.Println("Actions extracted successfully:", actions)
 
 	return actions, nil
 }
-
 
 
 func generateGlobPattern(ss []string) string {
